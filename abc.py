@@ -2,69 +2,87 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 
-st.set_page_config(page_title="Excel Numeric Analyzer", layout="wide")
-st.title("Excel Numeric Analyzer")
-st.write("Upload an Excel file. The app will analyze numeric columns, plot histograms, and compare mean vs median.")
+st.set_page_config(page_title="Excel Forecast Check App", layout="wide")
 
-uploaded_file = st.file_uploader("Upload an Excel file", type=["xlsx", "xls"])
+st.title("Excel Forecast Check App")
+st.write(
+    "Upload an Excel file. The app will detect numeric columns, "
+    "create histograms, and calculate mean and median."
+)
 
-def forecast_message(mean_val, median_val):
-    if pd.isna(mean_val) or pd.isna(median_val):
-        return "Not enough data to judge forecasting suitability."
-    diff = abs(mean_val - median_val)
-    avg = (abs(mean_val) + abs(median_val)) / 2 if (abs(mean_val) + abs(median_val)) != 0 else 1
-    if diff <= 0.1 * avg:
-        return "the data can be used for the forecasting"
-    return "the data may need more analysis before forecasting"
+uploaded_file = st.file_uploader("Upload Excel file", type=["xlsx", "xls"])
+
+def is_close(mean_value, median_value, tolerance=0.10):
+    if pd.isna(mean_value) or pd.isna(median_value):
+        return False
+
+    base = max(abs(mean_value), abs(median_value), 1)
+    difference = abs(mean_value - median_value)
+
+    return difference <= tolerance * base
 
 if uploaded_file is not None:
     try:
         df = pd.read_excel(uploaded_file)
-        st.subheader("Preview")
+
+        st.subheader("Data Preview")
         st.dataframe(df.head())
 
-        numeric_cols = df.select_dtypes(include="number").columns.tolist()
+        numeric_df = df.select_dtypes(include="number")
 
-        if not numeric_cols:
-            st.warning("No numeric columns found in the uploaded file.")
+        if numeric_df.empty:
+            st.warning("No numeric columns were found in this Excel file.")
         else:
-            st.subheader("Numeric Column Analysis")
+            st.subheader("Analysis Results")
 
-            results = []
+            summary_rows = []
 
-            for col in numeric_cols:
-                series = pd.to_numeric(df[col], errors="coerce").dropna()
+            for column in numeric_df.columns:
+                series = pd.to_numeric(numeric_df[column], errors="coerce").dropna()
 
                 if series.empty:
                     continue
 
-                mean_val = series.mean()
-                median_val = series.median()
-                message = forecast_message(mean_val, median_val)
+                mean_value = series.mean()
+                median_value = series.median()
 
-                results.append({
-                    "column": col,
-                    "mean": mean_val,
-                    "median": median_val,
-                    "forecast_suitability": message
+                if is_close(mean_value, median_value):
+                    forecast_message = "The data can be used for forecasting"
+                else:
+                    forecast_message = "The data may need more analysis before forecasting"
+
+                summary_rows.append({
+                    "Column": column,
+                    "Mean": round(mean_value, 4),
+                    "Median": round(median_value, 4),
+                    "Forecast Check": forecast_message
                 })
 
-                st.markdown(f"### {col}")
-                st.write(f"Mean: **{mean_val:.4f}**")
-                st.write(f"Median: **{median_val:.4f}**")
-                st.write(message)
+                st.markdown(f"### {column}")
+                col1, col2 = st.columns(2)
 
-                fig, ax = plt.subplots()
+                with col1:
+                    st.metric("Mean", f"{mean_value:.4f}")
+
+                with col2:
+                    st.metric("Median", f"{median_value:.4f}")
+
+                st.info(forecast_message)
+
+                fig, ax = plt.subplots(figsize=(7, 4))
                 ax.hist(series, bins=20, edgecolor="black")
-                ax.set_title(f"Histogram of {col}")
-                ax.set_xlabel(col)
+                ax.set_title(f"Histogram of {column}")
+                ax.set_xlabel(column)
                 ax.set_ylabel("Frequency")
                 st.pyplot(fig)
+                plt.close(fig)
 
-            if results:
+            if summary_rows:
                 st.subheader("Summary Table")
-                result_df = pd.DataFrame(results)
-                st.dataframe(result_df)
+                summary_df = pd.DataFrame(summary_rows)
+                st.dataframe(summary_df, use_container_width=True)
 
     except Exception as e:
-        st.error(f"Error reading file: {e}")
+        st.error(f"Error reading the Excel file: {e}")
+else:
+    st.info("Please upload an Excel file to start.")
